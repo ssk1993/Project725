@@ -1,0 +1,287 @@
+---
+title: "starter"
+author: "Sugandh K"
+date: "11/7/2020"
+output: pdf_document
+---
+
+Loading libraries
+```{r message=FALSE, warning=FALSE}
+require(tidyverse)
+require(ggplot2)
+require(data.table)
+require(plyr)
+require(dplyr)
+require(knitr)
+require(foreign)
+require(ggcorrplot)
+require(corrplot)
+require(caret)
+require(gridExtra)
+require(scales)
+require(Rmisc)
+require(ggrepel)
+require(randomForest)
+require(glmnet)
+require(psych)
+require(xgboost)
+require(ggthemes)
+
+```
+
+```{r message=FALSE, warning=FALSE}
+
+#setting up a working directory
+setwd("C:/Users/sugan/Desktop/725/project/auction")
+
+#loading a dataset
+
+df <- read.dta("ebaydatafinal.dta")
+```
+```{r}
+
+#summary for the highest bid
+summary(df$biddy1)
+
+```
+
+There are 22522 null values in highest bid variable. This column will be revenue as its the amount the seller gets when he sells the item. one thing to notice here is that the maximum bid in dataset is 1780400.
+
+```{r}
+#keeping only items which have been sold
+
+df <- df[df$sell == 1 ,]
+```
+
+I did this considering that if the item isn't sold , then there is no revenue for the seller.
+
+Checking if we have null values now for highest bid 
+
+```{r}
+summary(df$biddy1)
+```
+
+
+
+## Data Cleaning 
+
+# Formatting Dates: 
+
+The columns start date and end date 
+
+```{r}
+head(df$startdate)
+```
+
+```{r message=FALSE, warning=FALSE}
+library("lubridate")
+
+#converting strings into date format 
+df$startdate <- parse_date_time(df$startdate, orders="mdy HMS")
+df$enddate <- parse_date_time(df$enddate, orders="mdy HMS")
+
+```
+
+
+```{r}
+#extracting months from dates 
+df$months <-  month(df$startdate)
+df$days <- day(df$startdate)
+df$monthe <-  month(df$enddate)
+df$daye <- day(df$enddate)
+```
+
+```{r}
+#converting long dates to short dates and converting them to mm-dd-yy format 
+df$startdate <- date(df$startdate)
+df$startdate <- format(df$startdate, "%m-%d-%y")
+
+df$enddate <- date(df$enddate)
+df$enddate <- format(df$enddate, "%m-%d-%y")
+
+```
+
+
+The most importent numeric variables 
+
+```{r}
+numericVars <- which(sapply(df, is.numeric)) #index vector numeric variables
+numericVarNames <- names(numericVars) #saving names vector for use later on
+cat('There are', length(numericVars), 'numeric variables')
+
+
+```
+
+```{r}
+df_numVar <- df[, numericVars]
+
+#correlation of all numeric variables
+
+cor_numVar <- cor(df_numVar, use="pairwise.complete.obs")
+```
+
+```{r}
+#sort on decreasing correlations with highest bid
+cor_sorted <- as.matrix(sort(cor_numVar[,'biddy1'], decreasing = TRUE))
+```
+
+
+
+Lets see which variables are positively correlated with highest bid 
+
+```{r}
+head(cor_sorted ,50)
+```
+
+From above we can see that biddy2 , bookvalue , startbid , warranty , options , phone, logsize , loghtml , logtext , numbids , featured , descriptionsize , dealer , length , inspection , photos , logage are highly correlated with highest bid .
+
+
+
+Now , lets see which variables are negatively correlated with highest bid 
+```{r}
+tail(cor_sorted ,50)
+```
+
+
+From above we can see that logmiles , rust , dent , crack , age , broken , problem are negatively correlated with highest bid . 
+
+
+## Missing data , label encoding and Factorizing variables 
+
+
+
+```{r}
+
+#which columns have missing values 
+NAcol <- which(colSums(is.na(df)) > 0)
+
+NAcol
+```
+
+```{r}
+cat('There are', length(NAcol), 'columns with missing values')
+```
+bookvalue has 19 missing values and photos has 29 missing values and biddy5 has  45 missing values , for now I am just dropping these missing values and we will think about imputingf them in future . 
+
+```{r message=FALSE}
+#deleting missing values 
+df=df[!is.na(df$bookvalue),]
+
+df=df[!is.na(df$photos),]
+
+df=df[!is.na(df$biddy5),]
+
+```
+
+
+Now lets try imputing age and logmiles variables. I am imputing these variables with the median 
+
+```{r message=FALSE, warning=FALSE}
+library(Hmisc)
+df$age<-impute(df$age, median)
+df$logmiles<-impute(df$logmiles, median)
+
+```
+
+
+
+## Label Encoding / factorizing the charachter variables 
+
+```{r}
+Charcol <- names(df[,sapply(df, is.character)])
+Charcol
+```
+
+```{r}
+cat('There are', length(Charcol), 'remaining columns with character values')
+```
+First lets consider variables maker , interior and exterior . They all are factor variables .
+
+```{r}
+df$maker <- as.factor(df$maker)
+table(df$maker)
+```
+
+```{r}
+df$interior <- as.factor(df$interior)
+table(df$interior)
+
+```
+
+```{r}
+df$exterior <- as.factor(df$exterior)
+table(df$exterior)
+```
+
+
+# dealing with date variables 
+
+```{r}
+
+df$membersince <- parse_date_time(df$membersince, orders="mdy")
+df$monthm <-month(df$membersince)
+df$daym <- day(df$membersince)
+df$membersince <- date(df$membersince)
+df$membersince <- format(df$membersince, "%m-%d-%y")
+
+
+```
+
+```{r}
+df$months <- as.factor(df$months)
+df$days <- as.factor(df$days)
+df$monthe <- as.factor(df$monthe)
+df$daye <- as.factor(df$daye)
+df$monthm <- as.factor(df$monthm)
+df$daym <- as.factor(df$daym)
+
+```
+
+
+## Correlations
+
+```{r}
+#keeping only required columns 
+df<-df[, c("biddy1" , "biddy2" , "biddy3" ,"biddy4", "biddy5" ,"bookvalue", "photos",  "startbid" , "warranty" , "options" , "phone", "logsize" , "loghtml" , "logtext" , "numbids" , "featured" , "descriptionsize" , "dealer" , "length" , "inspection" , "photos" , "age" , "logmiles" , "rust" , "dent" , "crack" , "age" , "broken","months", "monthm", "monthe", "days" , "daye" , "daym", "maker", "interior" , "exterior" )]
+
+```
+
+
+## Finding variable importance with Random forest 
+
+```{r}
+set.seed(2020)
+quick_RF <- randomForest(x=df[1:13374,-36], y= df$biddy1[1:13374], ntree=100,importance=TRUE)
+imp_RF <- importance(quick_RF)
+imp_DF <- data.frame(Variables = row.names(imp_RF), MSE = imp_RF[,1])
+imp_DF <- imp_DF[order(imp_DF$MSE, decreasing = TRUE),]
+
+ggplot(imp_DF[1:20,], aes(x=reorder(Variables, MSE), y=MSE, fill=MSE)) + geom_bar(stat = 'identity') + labs(x = 'Variables', y= '% increase MSE if variable is randomly permuted') + coord_flip() + theme(legend.position="none")
+
+```
+
+
+
+Lets draw some graphs associated with the highest bid/ revenue. first lets see the density of the biddy1 
+
+```{r}
+p2 <-ggplot(data=df[df$biddy1 < 50000,], aes(x= biddy1))+
+  geom_histogram(fill="blue", binwidth = 1500)+
+  ggtitle('Highest bid density ') + theme_stata()
+p2
+```
+
+Lets look at the relationship of this biddy1/revenue with number of bidders 
+```{r}
+p2 <-ggplot(data= df[df$biddy1 < 50000,], aes(x = numbids,y= biddy1))+
+  geom_point()
+p2
+```
+
+
+```{r}
+
+```
+
+
+
