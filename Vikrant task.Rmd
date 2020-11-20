@@ -1,0 +1,168 @@
+---
+title: "Vikrant task"
+author: "Vikrant Vilas Kamble"
+date: "11/19/2020"
+output: 
+  
+  pdf_document: default
+  html_document: defaults 
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+rm(list=ls())
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+
+library(data.table)
+library(rlang)
+suppressMessages(library(dplyr))  # I am using the "dplyr" package.
+library(ggplot2)
+library(leaps)
+suppressMessages(library(glmnet))
+suppressMessages(library(data.table))
+library(foreign)
+library(caret)
+library(Metrics)
+library(tinytex)
+library("dplyr")
+library("tidyverse")
+require("glmnet")
+library("glmnet")
+```
+
+
+\ First import the dataset. 
+```{r}
+#loading a dataset
+
+df <- read.dta("ebaydatafinal.dta")
+#DV: revenue:-biddy1,
+#Indep VAR:numbids
+```
+
+\ Keep only required columns here only dependent variable and independent variable.
+```{r}
+#keep only dependent and indep. vars
+df1 <- df[, c("biddy1", "numbids")]
+```
+
+
+\ See if there are missing values. If, then remove it.
+```{r}
+colSums(is.na(df1))
+
+```
+```{r}
+df1 <- na.omit(df1)
+```
+Now, missing values are removed, check if there are still NA. If not then good to go for relationship/correlation graphs.
+```{r}
+colSums(is.na(df1))
+```
+\ make bar plot of ranges for variable numbids. Can do counter plot or see.
+\ first check the correlation test between DV and IdV.
+
+```{r}
+cr <- cor(df1)
+cr
+```
+\ We can see above the correlation is a bit low which is 0.005, meaning revenue is little related with the number of bidders.
+
+```{r}
+library(corrplot)
+corrplot(cr, method="number")
+```
+\ above graph is shows that the relationship between the DV and IV is weak as the color seems white from the color scale.
+\ Now lets try to graph the basic relationship using scatter plot.
+
+```{r}
+plot(df1$biddy1, df1$numbids, xlab="Revenue", ylab="Number of Bidders", main="Relationship between revenue and no. of bidders")
+```
+
+\ Just limit the x and y axis scale and see what happen
+```{r}
+plot(df1$biddy1, df1$numbids, xlab="Revenue", ylab="Number of Bidders", main="Relationship between revenue and no. of bidders", xlim=c(0,500000), ylim=c(0,200), pch=20)
+```
+\ Again limit the x and y axis scale to get more info.
+
+```{r}
+plot(df1$biddy1, df1$numbids, xlab="Revenue", ylab="Number of Bidders", main="Relationship between revenue and no. of bidders", xlim=c(0,300000), ylim=c(0,200), pch=20, col="green")
+```
+\ Now do some bar graphs. \
+See the frequesncy of the number of bids
+```{r}
+freqbids.freq <- table(df1$numbids)
+barplot(freqbids.freq, xlab="Number of Bidders", main="Frequeancy for no. of bidders")
+```
+```{r}
+col<- c(rep("red", 5), rgb(59, 89, 152, maxColorValue = 255))
+```
+
+
+```{r}
+barplot(freqbids.freq[order(freqbids.freq, decreasing=T)], col=col , xlab="Number of Bidders", main="Frequeancy for no. of bidders")
+```
+```{r}
+barplot(freqbids.freq[order(freqbids.freq)], horiz=T, xlab="Number of Bidders", main="Frequeancy for no. of bidders")
+```
+
+
+Now check the frequesncy for the revenue
+```{r}
+freqRev.freq <- table(df1$biddy1)
+barplot(freqRev.freq, col=col , xlab="Revenue", main="Frequeancy for Revenue")
+```
+\ Now covert the numbids(cont. var) into some categories
+```{r}
+is.numeric(df1$numbids)
+```
+\ Now let's try by the number of cut to the number of bids.
+```{r}
+df2 <- cut(df1$numbids, br=c(-1, 100, 200, 300, 400, 500), labels = c("between0to100", "between100to200", "between200to300", "between300to400", "between400to500"))
+#df2 #created the 5 levels (-1,100] (100,200] (200,300] ... (400,500]
+```
+\ check for surely is new dataframe is still numeric
+```{r}
+is.numeric(df2)
+```
+```{r}
+is.factor(df2)
+```
+\ OKay, now good to go.
+\ let's check frequency
+```{r}
+table(df2)
+```
+
+
+\ If we want the R to cut the numebric observations into numbers of categories we want then do this...
+```{r}
+df3 = cut(df1$numbids, 3) #where 3 is number of cuts we want
+#df3
+table(df3)
+```
+
+
+\ Now run a simple regressio of revenue on number of bidders
+```{r}
+mod1 <- lm(biddy1~ numbids, data=df1)
+mod1
+```
+\ Now just do regresssion conditional on the removing outliers from the numbids.
+```{r}
+mod2 <- lm(biddy1~ numbids, data=subset(df1, numbids>80))
+mod2
+```
+\ When we do remove the outliers then estimate is getting good.
+
+
+
+
+
+
+
+
+
+
