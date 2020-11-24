@@ -1,0 +1,123 @@
+---
+title: "Nate"
+author: "Nathaniel Goodell"
+date: "11/23/2020"
+output: 
+  
+  pdf_document: default
+  html_document: defaults 
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(lubridate)
+```
+
+You will need to read in the data set I created in STATA... The below removes all aesthetic variables and leaves the more general aesthetic variables as well as grouping variables (which were created in STATA).
+```{r dataset}
+setwd("C:/Users/Nate/Desktop/UW-Madison/Econ 725/Project data")
+ds <- read.csv("AuctionData.csv")
+
+df <- ds[-c(176:415)]
+
+df <- df[!grepl("^biddername",names(df))]
+
+```
+
+Here is variable factorization/creation.
+
+(Time parsing from you guys)
+```{r }
+
+df$startdate <- parse_date_time(df$startdate, orders="mdy HMS")
+df$enddate <- parse_date_time(df$enddate, orders="mdy HMS")
+
+df$months <-  month(df$startdate)
+df$days <- day(df$startdate)
+df$monthe <-  month(df$enddate)
+df$day <- day(df$enddate)
+
+df$startdate <- date(df$startdate)
+df$startdate <- format(df$startdate, "%m-%d-%y")
+
+df$enddate <- date(df$enddate)
+df$enddate <- format(df$enddate, "%m-%d-%y")
+```
+
+Making factors out of easily interpretable vars. 
+```{r}
+df$trans <- as.factor(df$trans)
+df$title <- as.factor(df$title)
+df$condition <- as.factor(df$condition)
+```
+
+webpage : 1 if ebay, 0 for everything else
+```{r}
+df$webpage <- ifelse(df$webpage=="ebayhosting",1,0)
+```
+
+
+Changing interior and exterior variables to be 1 if a 'normal' color and 0 otherwise. I define normal as over 2000 vehicles with the color. 
+```{r}
+extnormcolor <- list("Black", "Blue", "Brown", "Green",
+                  "Orange", "Silver", "Tan", "Yellow",
+                  "Burgundy","Gold","Gray","Red", "White")
+
+df$exterior <- ifelse(df$exterior %in% extnormcolor,1,0)
+
+intnormcolor <- list("Black","Blue","Brown","Gray",
+                     "Gray","Red","Tan","White")
+
+df$interior <- ifelse(df$interior %in% intnormcolor,1,0)
+```
+
+
+We will keep maker as a factor but make a new one called "BigThree", which will be the big three 'domestic' brands.
+```{r}
+df$maker <- as.factor(df$maker)
+
+big3 <- list("Chevrolet","Dodge","Ford")
+df$BigThree <- ifelse(df$maker %in% big3, 1,0)
+```
+
+We create three new variables (and drop model) to designate if a vehicle is in one of three classes (or none).
+```{r}
+sportscar <- list("Camaro","Corvette","Mustang","Thunderbird")
+midsize <- list("Civic","Accord","Corolla","Camry","Maxima","Altima","3-Series")
+truck <- list("F-250","F-150","Tacoma","F-350","Silverado 1500","Silverado 2500","F-100")
+
+df$sportscar <- ifelse(df$model %in% sportscar,1,0)
+df$midsize <- ifelse(df$model %in% midsize,1,0)
+df$truck <- ifelse(df$model %in% truck,1,0)
+
+df <- subset(df,select = -c(model))
+```
+
+There are more sales than sellers and high bidders, so we have repeats, we should have a measure of market participation. If we use this var, keep in mind, the highest values are empty values counted as if they are all the same. I would suggest removing all observations without names if we use this (or use another var). With the plot in this section, we see two 'lines' the one around 32,000 is all the unnamed highbidders and the lower 'line' is all those with names. We can see that this seems to suggest that the group of unnamed highbidders is a representative subset of the named group (This could be a really cool way to do a test/control group maybe [it represents about 22% of obs]... otherwise, if we could think of a way to name based on the distribution of the named group, the unnamed group).
+```{r}
+#seller and high bidder participation
+df <- data.table(df)
+
+length(unique(df$sellername))
+
+df <- df[,sellerpart := .N, by = df$sellername]
+
+length(unique(df$highbiddername))
+
+df <- df[,highbidderpart := .N, by = df$highbiddername]
+
+with(df,plot(sellerpart,highbidderpart))
+```
+
+Fixing Feedback vars
+
+```{r}
+#fix feedback
+df$highbidderfdback <- abs(df$highbidderfdback)
+df[["highbidderfdback"]][is.na(df[["highbidderfdback"]])] <- 0
+df$logfdback <- log(df$highbidderfdback)
+```
+
+
