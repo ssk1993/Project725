@@ -17,7 +17,7 @@ library(lubridate)
 
 You will need to read in the data set I created in STATA... The below removes all aesthetic variables and leaves the more general aesthetic variables as well as grouping variables (which were created in STATA).
 ```{r dataset}
-setwd("C:/Users/Nate/Desktop/UW-Madison/Econ 725/Project data")
+setwd("C:/Users/Nate/Documents/GitHub/Project725")
 ds <- read.csv("AuctionData.csv")
 
 df <- ds[-c(176:415)]
@@ -120,4 +120,104 @@ df[["highbidderfdback"]][is.na(df[["highbidderfdback"]])] <- 0
 df$logfdback <- log(df$highbidderfdback)
 ```
 
+Below finishes data cleaning
+```{r}
+#fix feedback
+df$highbidderfdback <- abs(df$highbidderfdback)
+df[["highbidderfdback"]][is.na(df[["highbidderfdback"]])] <- 0
+df$logfdback <- log(df$highbidderfdback)
 
+#fix bidder 
+bids <- df[,c(36:57)]
+df <- df[,-c(37:57)]
+bidstime <- df[,c(133:220)]
+df <- df[,-c(133:220)]
+
+bids[is.na(bids)] <- 0
+bidstime[is.na(bidstime)] <- 0
+
+########this is auction excitement (I find the average distance between bids, small average indicates a 'close' auction and less excited buyer maybe?)
+aucdif <- (bids$biddy1-bids$biddy2)+(bids$biddy2-bids$biddy3)+(bids$biddy3-bids$biddy4)+
+  (bids$biddy4-bids$biddy5)+(bids$biddy5-bids$biddy6)+(bids$biddy6-bids$biddy7)+
+  (bids$biddy7-bids$biddy8)+(bids$biddy8-bids$biddy9)+(bids$biddy9-bids$biddy10)+
+  (bids$biddy10-bids$biddy11)+(bids$biddy11-bids$biddy12)+(bids$biddy12-bids$biddy13)+
+  (bids$biddy13-bids$biddy14)+(bids$biddy14-bids$biddy15)+(bids$biddy15-bids$biddy16)+
+  (bids$biddy16-bids$biddy17)+(bids$biddy17-bids$biddy18)+(bids$biddy18-bids$biddy19)+
+  (bids$biddy19-bids$biddy20)+(bids$biddy20-bids$biddy21)+(bids$biddy21-bids$biddy22)
+
+##########this is auction velocity, i.e. average time difference between all bids
+aucdifvd <- (bidstime$biddate1-bidstime$biddate2)+(bidstime$biddate2-bidstime$biddate3)+(bidstime$biddate3-bidstime$biddate4)+
+  (bidstime$biddate4-bidstime$biddate5)+(bidstime$biddate5-bidstime$biddate6)+(bidstime$biddate6-bidstime$biddate7)+
+  (bidstime$biddate7-bidstime$biddate8)+(bidstime$biddate8-bidstime$biddate9)+(bidstime$biddate9-bidstime$biddate10)+
+  (bidstime$biddate10-bidstime$biddate11)+(bidstime$biddate11-bidstime$biddate12)+(bidstime$biddate12-bidstime$biddate13)+
+  (bidstime$biddate13-bidstime$biddate14)+(bidstime$biddate14-bidstime$biddate15)+(bidstime$biddate15-bidstime$biddate16)+
+  (bidstime$biddate16-bidstime$biddate17)+(bidstime$biddate17-bidstime$biddate18)+(bidstime$biddate18-bidstime$biddate19)+
+  (bidstime$biddate19-bidstime$biddate20)+(bidstime$biddate20-bidstime$biddate21)+(bidstime$biddate21-bidstime$biddate22)
+
+aucdifvh <- (bidstime$bidhour1-bidstime$bidhour2)+(bidstime$bidhour2-bidstime$bidhour3)+(bidstime$bidhour3-bidstime$bidhour4)+
+  (bidstime$bidhour4-bidstime$bidhour5)+(bidstime$bidhour5-bidstime$bidhour6)+(bidstime$bidhour6-bidstime$bidhour7)+
+  (bidstime$bidhour7-bidstime$bidhour8)+(bidstime$bidhour8-bidstime$bidhour9)+(bidstime$bidhour9-bidstime$bidhour10)+
+  (bidstime$bidhour10-bidstime$bidhour11)+(bidstime$bidhour11-bidstime$bidhour12)+(bidstime$bidhour12-bidstime$bidhour13)+
+  (bidstime$bidhour13-bidstime$bidhour14)+(bidstime$bidhour14-bidstime$bidhour15)+(bidstime$bidhour15-bidstime$bidhour16)+
+  (bidstime$bidhour16-bidstime$bidhour17)+(bidstime$bidhour17-bidstime$bidhour18)+(bidstime$bidhour18-bidstime$bidhour19)+
+  (bidstime$bidhour19-bidstime$bidhour20)+(bidstime$bidhour20-bidstime$bidhour21)+(bidstime$bidhour21-bidstime$bidhour22)
+
+aucdifvm <- (bidstime$bidminute1-bidstime$bidminute2)+(bidstime$bidminute2-bidstime$bidminute3)+(bidstime$bidminute3-bidstime$bidminute4)+
+  +   (bidstime$bidminute4-bidstime$bidminute5)+(bidstime$bidminute5-bidstime$bidminute6)+(bidstime$bidminute6-bidstime$bidminute7)+
+  +   (bidstime$bidminute7-bidstime$bidminute8)+(bidstime$bidminute8-bidstime$bidminute9)+(bidstime$bidminute9-bidstime$bidminute10)+
+  +   (bidstime$bidminute10-bidstime$bidminute11)+(bidstime$bidminute11-bidstime$bidminute12)+(bidstime$bidminute12-bidstime$bidminute13)+
+  +   (bidstime$bidminute13-bidstime$bidminute14)+(bidstime$bidminute14-bidstime$bidminute15)+(bidstime$bidminute15-bidstime$bidminute16)+
+  +   (bidstime$bidminute16-bidstime$bidminute17)+(bidstime$bidminute17-bidstime$bidminute18)+(bidstime$bidminute18-bidstime$bidminute19)+
+  +   (bidstime$bidminute19-bidstime$bidminute20)+(bidstime$bidminute20-bidstime$bidminute21)+(bidstime$bidminute21-bidstime$bidminute22)
+
+aucdifvs <- (bidstime$bidsecond1-bidstime$bidsecond2)+(bidstime$bidsecond2-bidstime$bidsecond3)+(bidstime$bidsecond3-bidstime$bidsecond4)+
+  +   (bidstime$bidsecond4-bidstime$bidsecond5)+(bidstime$bidsecond5-bidstime$bidsecond6)+(bidstime$bidsecond6-bidstime$bidsecond7)+
+  +   (bidstime$bidsecond7-bidstime$bidsecond8)+(bidstime$bidsecond8-bidstime$bidsecond9)+(bidstime$bidsecond9-bidstime$bidsecond10)+
+  +   (bidstime$bidsecond10-bidstime$bidsecond11)+(bidstime$bidsecond11-bidstime$bidsecond12)+(bidstime$bidsecond12-bidstime$bidsecond13)+
+  +   (bidstime$bidsecond13-bidstime$bidsecond14)+(bidstime$bidsecond14-bidstime$bidsecond15)+(bidstime$bidsecond15-bidstime$bidsecond16)+
+  +   (bidstime$bidsecond16-bidstime$bidsecond17)+(bidstime$bidsecond17-bidstime$bidsecond18)+(bidstime$bidsecond18-bidstime$bidsecond19)+
+  +   (bidstime$bidsecond19-bidstime$bidsecond20)+(bidstime$bidsecond20-bidstime$bidsecond21)+(bidstime$bidsecond21-bidstime$bidsecond22)
+
+aucdifvd <- ifelse(aucdifvd > 10, aucdifvd-16802, aucdifvd)
+aucdifvh <- aucdifvh/24
+aucdifvm <- aucdifvm/(24*60)
+aucdifvs <- aucdifvs/(24*60*60)
+velocity <- aucdifvd+aucdifvh+aucdifvm+aucdifvs
+velocity <- abs(velocity)
+
+bidcount <- rowSums(bids!=0)
+
+aucxcite <- (aucdif/velocity)/bidcount
+
+is.nan.data.frame <- function(x)
+do.call(cbind, lapply(x, is.nan))
+
+aucxcite[is.nan(aucxcite)] <- 0
+
+df <- cbind(df,aucxcite)
+
+#getting rid of extra vars and changing NA TO 0
+
+df <- df[,-c(37:132,177:182,184:189,191:196,198:203,205:210,212:217,
+             219:224)]
+df <- df[,-c(77)]
+df <- df[,-c(2,5,6,7,8,9,75)]
+df <- df[,-c(4,5)]
+df <- df[,-c(11)]
+
+df$biddy1 <- ifelse(is.na(df$biddy1),0,df$biddy1)
+df$pctfdback <- ifelse(is.na(df$pctfdback),0,df$pctfdback)
+df$photos <- ifelse(is.na(df$photos),0,df$photos)
+df$photos <- ifelse(df$photos<0,0,df$photos)
+df$logphotos <- log(df$photos)
+df$sellerage <- abs(df$sellerage)
+df$logage <- log(df$age)
+df <- df[,-c(56)]
+df$logbid1 <- ifelse(is.na(df$logbid1),"-inf",df$logbid1)
+df$logbid2 <- ifelse(is.na(df$logbid2),"-inf",df$logbid2)
+df$logbid3 <- ifelse(is.na(df$logbid3),"-inf",df$logbid3)
+df$doors <- ifelse(df$doors=="." & df$sportscar==1,2,df$doors)
+df$doors <- ifelse(df$doors=="." & df$midsize==1,4,df$doors)
+df$doors <- ifelse(df$doors=="." & df$truck==1,4,df$doors)
+
+remove(aucdif,aucdifvd,aucdifvh,aucdifvm,aucdifvs,aucxcite,bidcount,velocity,truck,sportscar,midsize,intnormcolor,extnormcolor,big3,bidstime,bids)
