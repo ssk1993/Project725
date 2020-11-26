@@ -12,7 +12,11 @@ output:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
+library(data.table)
 library(lubridate)
+library(tidyverse)
+library(stargazer)
+
 ```
 
 You will need to read in the data set I created in STATA... The below removes all aesthetic variables and leaves the more general aesthetic variables as well as grouping variables (which were created in STATA).
@@ -221,3 +225,67 @@ df$doors <- ifelse(df$doors=="." & df$midsize==1,4,df$doors)
 df$doors <- ifelse(df$doors=="." & df$truck==1,4,df$doors)
 
 remove(aucdif,aucdifvd,aucdifvh,aucdifvm,aucdifvs,aucxcite,bidcount,velocity,truck,sportscar,midsize,intnormcolor,extnormcolor,big3,bidstime,bids)
+```
+
+Finishing Cleaning
+```{r}
+
+library(IDPmisc)
+
+df <- df[biddy1>0]
+
+df <- df[,-c("location")]
+df <- df[,-c("membersince")]
+df <- df[logfdback>0]
+df <- df[logbid1>0]
+df <- df[logbid2>0]
+df <- df[logbid3>0]
+df <- df[logphotos>0]
+df <- df[doors>0]
+df <- df[!(trans==".")]
+df <- df[!(title==".")]
+df <- df[!(cyl==".")]
+df <- df[logmiles>0]
+df$sellfdbackpct <- abs(df$sellfdbackpct)
+df <- df[,-c(62:63)]
+
+
+```
+
+
+Here is Lasso
+```{r}
+
+#################################
+
+df <- na.omit(df)
+
+set.seed(0)
+
+p <- list(.75,.25)
+
+train = sample(c(TRUE,FALSE), nrow(df), rep=TRUE, prob = p )
+test = (!train)
+
+##############LASSO##############
+x <- model.matrix(logbid1 ~., data = df)
+
+y <- df$logbid1
+
+grid <- 10^seq(10,-2,length = 100)
+
+lasso1 <- glmnet(x[train,],y[train],alpha = 1, lambda = grid)
+
+cv_lasso1 <-  cv.glmnet(x[train,],y[train],alpha = 1)
+plot(cv_lasso1)
+bestlmdalasso1 = cv_lasso1$lambda.min
+
+bestlmdalasso1
+
+lasso1_pred <- predict(lasso1, s = bestlmdalasso1, newx = x[test,])
+MSE_lm2_lasso1 <- mean((lasso1_pred-y[test])^2)
+
+rsq = 1 - cv_lasso1$cvm/var(y)
+plot(cv_lasso1$lambda,rsq)
+
+```
