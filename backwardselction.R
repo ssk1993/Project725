@@ -16,7 +16,7 @@ library(corrplot)
 
 
 
-#setting up work directory 
+#setting up work directory  
 setwd("C:/Users/sugan/Desktop/725/project/auction")
 #loading a dataset
 df <- read.dta("ebaydatafinal.dta")
@@ -219,5 +219,7 @@ which.min(val.errors)
 coef(regfit.full ,19)
 
 #these are the variables will be used for lasso and ridge .
+names(factdf)
+
 
 
