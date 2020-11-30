@@ -1,0 +1,298 @@
+rm(list = ls())
+
+setwd("C:/Users/Nate/Documents/GitHub/Project725")
+
+library(dplyr)
+library(data.table)
+library(lubridate)
+library(tidyverse)
+library(stargazer)
+library(leaps)
+library(glmnet)
+library(IDPmisc)
+
+
+
+ds <- read.csv("AuctionData.csv")
+
+df <- ds[-c(176:415)]
+
+df <- df[!grepl("^biddername",names(df))]
+
+
+df$startdate <- parse_date_time(df$startdate, orders="mdy HMS")
+df$enddate <- parse_date_time(df$enddate, orders="mdy HMS")
+
+df$months <-  month(df$startdate)
+df$days <- day(df$startdate)
+df$monthe <-  month(df$enddate)
+df$daye <- day(df$enddate)
+
+df$startdate <- date(df$startdate)
+df$startdate <- format(df$startdate, "%m-%d-%y")
+
+df$enddate <- date(df$enddate)
+df$enddate <- format(df$enddate, "%m-%d-%y")
+
+df$trans <- ifelse(df$trans=="Automatic",2,ifelse(df$trans=="Manual",1,0))
+df$title <- ifelse(df$title=="Clear",2,ifelse(df$title=="Salvage",0,1))
+df$condition <- ifelse(df$condition=="New",2,ifelse(df$condition=="Certified Pre-Owned",1,0))
+
+
+#1 if ebay, 0 for everything else
+df$webpage <- ifelse(df$webpage=="ebayhosting",1,0)
+
+#normal color is if over 2000 cars have the color (exterior)
+extnormcolor <- list("Black", "Blue", "Brown", "Green",
+                     "Orange", "Silver", "Tan", "Yellow",
+                     "Burgundy","Gold","Gray","Red", "White")
+
+df$exterior <- ifelse(df$exterior %in% extnormcolor,1,0)
+
+intnormcolor <- list("Black","Blue","Brown","Gray",
+                     "Gray","Red","Tan","White")
+
+df$interior <- ifelse(df$interior %in% intnormcolor,1,0)
+
+#We will keep maker as a factor but make a new one called 'BigThree"
+#which will be the big three 'domestic' brands
+
+df$maker <- as.factor(df$maker)
+
+big3 <- list("Chevrolet","Dodge","Ford")
+df$BigThree <- ifelse(df$maker %in% big3, 1,0)
+
+#car model 
+sportscar <- list("Camaro","Corvette","Mustang","Thunderbird")
+midsize <- list("Civic","Accord","Corolla","Camry","Maxima","Altima","3-Series")
+truck <- list("F-250","F-150","Tacoma","F-350","Silverado 1500","Silverado 2500","F-100")
+
+df$sportscar <- ifelse(df$model %in% sportscar,1,0)
+df$midsize <- ifelse(df$model %in% midsize,1,0)
+df$truck <- ifelse(df$model %in% truck,1,0)
+
+df <- subset(df,select = -c(model))
+
+#seller participation
+df <- data.table(df)
+
+length(unique(df$sellername))
+
+df <- df[,sellerpart := .N, by = df$sellername]
+
+length(unique(df$highbiddername))
+
+df <- df[,highbidderpart := .N, by = df$highbiddername]
+
+#fix feedback
+df$highbidderfdback <- abs(df$highbidderfdback)
+df[["highbidderfdback"]][is.na(df[["highbidderfdback"]])] <- 0
+df$logfdback <- log(df$highbidderfdback)
+
+#fix bidder 
+bids <- df[,c(36:57)]
+df <- df[,-c(37:57)]
+bidstime <- df[,c(133:220)]
+df <- df[,-c(133:220)]
+
+bids[is.na(bids)] <- 0
+bidstime[is.na(bidstime)] <- 0
+
+########this is auction excitement (I find the average distance between bids, small average indicates a 'close' auction and less excited buyer maybe?)
+aucdif <- (bids$biddy1-bids$biddy2)+(bids$biddy2-bids$biddy3)+(bids$biddy3-bids$biddy4)+
+  (bids$biddy4-bids$biddy5)+(bids$biddy5-bids$biddy6)+(bids$biddy6-bids$biddy7)+
+  (bids$biddy7-bids$biddy8)+(bids$biddy8-bids$biddy9)+(bids$biddy9-bids$biddy10)+
+  (bids$biddy10-bids$biddy11)+(bids$biddy11-bids$biddy12)+(bids$biddy12-bids$biddy13)+
+  (bids$biddy13-bids$biddy14)+(bids$biddy14-bids$biddy15)+(bids$biddy15-bids$biddy16)+
+  (bids$biddy16-bids$biddy17)+(bids$biddy17-bids$biddy18)+(bids$biddy18-bids$biddy19)+
+  (bids$biddy19-bids$biddy20)+(bids$biddy20-bids$biddy21)+(bids$biddy21-bids$biddy22)
+
+##########this is auction velocity, i.e. average time difference between all bids
+aucdifvd <- (bidstime$biddate1-bidstime$biddate2)+(bidstime$biddate2-bidstime$biddate3)+(bidstime$biddate3-bidstime$biddate4)+
+  (bidstime$biddate4-bidstime$biddate5)+(bidstime$biddate5-bidstime$biddate6)+(bidstime$biddate6-bidstime$biddate7)+
+  (bidstime$biddate7-bidstime$biddate8)+(bidstime$biddate8-bidstime$biddate9)+(bidstime$biddate9-bidstime$biddate10)+
+  (bidstime$biddate10-bidstime$biddate11)+(bidstime$biddate11-bidstime$biddate12)+(bidstime$biddate12-bidstime$biddate13)+
+  (bidstime$biddate13-bidstime$biddate14)+(bidstime$biddate14-bidstime$biddate15)+(bidstime$biddate15-bidstime$biddate16)+
+  (bidstime$biddate16-bidstime$biddate17)+(bidstime$biddate17-bidstime$biddate18)+(bidstime$biddate18-bidstime$biddate19)+
+  (bidstime$biddate19-bidstime$biddate20)+(bidstime$biddate20-bidstime$biddate21)+(bidstime$biddate21-bidstime$biddate22)
+
+aucdifvh <- (bidstime$bidhour1-bidstime$bidhour2)+(bidstime$bidhour2-bidstime$bidhour3)+(bidstime$bidhour3-bidstime$bidhour4)+
+  (bidstime$bidhour4-bidstime$bidhour5)+(bidstime$bidhour5-bidstime$bidhour6)+(bidstime$bidhour6-bidstime$bidhour7)+
+  (bidstime$bidhour7-bidstime$bidhour8)+(bidstime$bidhour8-bidstime$bidhour9)+(bidstime$bidhour9-bidstime$bidhour10)+
+  (bidstime$bidhour10-bidstime$bidhour11)+(bidstime$bidhour11-bidstime$bidhour12)+(bidstime$bidhour12-bidstime$bidhour13)+
+  (bidstime$bidhour13-bidstime$bidhour14)+(bidstime$bidhour14-bidstime$bidhour15)+(bidstime$bidhour15-bidstime$bidhour16)+
+  (bidstime$bidhour16-bidstime$bidhour17)+(bidstime$bidhour17-bidstime$bidhour18)+(bidstime$bidhour18-bidstime$bidhour19)+
+  (bidstime$bidhour19-bidstime$bidhour20)+(bidstime$bidhour20-bidstime$bidhour21)+(bidstime$bidhour21-bidstime$bidhour22)
+
+aucdifvm <- (bidstime$bidminute1-bidstime$bidminute2)+(bidstime$bidminute2-bidstime$bidminute3)+(bidstime$bidminute3-bidstime$bidminute4)+
+  +   (bidstime$bidminute4-bidstime$bidminute5)+(bidstime$bidminute5-bidstime$bidminute6)+(bidstime$bidminute6-bidstime$bidminute7)+
+  +   (bidstime$bidminute7-bidstime$bidminute8)+(bidstime$bidminute8-bidstime$bidminute9)+(bidstime$bidminute9-bidstime$bidminute10)+
+  +   (bidstime$bidminute10-bidstime$bidminute11)+(bidstime$bidminute11-bidstime$bidminute12)+(bidstime$bidminute12-bidstime$bidminute13)+
+  +   (bidstime$bidminute13-bidstime$bidminute14)+(bidstime$bidminute14-bidstime$bidminute15)+(bidstime$bidminute15-bidstime$bidminute16)+
+  +   (bidstime$bidminute16-bidstime$bidminute17)+(bidstime$bidminute17-bidstime$bidminute18)+(bidstime$bidminute18-bidstime$bidminute19)+
+  +   (bidstime$bidminute19-bidstime$bidminute20)+(bidstime$bidminute20-bidstime$bidminute21)+(bidstime$bidminute21-bidstime$bidminute22)
+
+aucdifvs <- (bidstime$bidsecond1-bidstime$bidsecond2)+(bidstime$bidsecond2-bidstime$bidsecond3)+(bidstime$bidsecond3-bidstime$bidsecond4)+
+  +   (bidstime$bidsecond4-bidstime$bidsecond5)+(bidstime$bidsecond5-bidstime$bidsecond6)+(bidstime$bidsecond6-bidstime$bidsecond7)+
+  +   (bidstime$bidsecond7-bidstime$bidsecond8)+(bidstime$bidsecond8-bidstime$bidsecond9)+(bidstime$bidsecond9-bidstime$bidsecond10)+
+  +   (bidstime$bidsecond10-bidstime$bidsecond11)+(bidstime$bidsecond11-bidstime$bidsecond12)+(bidstime$bidsecond12-bidstime$bidsecond13)+
+  +   (bidstime$bidsecond13-bidstime$bidsecond14)+(bidstime$bidsecond14-bidstime$bidsecond15)+(bidstime$bidsecond15-bidstime$bidsecond16)+
+  +   (bidstime$bidsecond16-bidstime$bidsecond17)+(bidstime$bidsecond17-bidstime$bidsecond18)+(bidstime$bidsecond18-bidstime$bidsecond19)+
+  +   (bidstime$bidsecond19-bidstime$bidsecond20)+(bidstime$bidsecond20-bidstime$bidsecond21)+(bidstime$bidsecond21-bidstime$bidsecond22)
+
+aucdifvd <- ifelse(aucdifvd > 10, aucdifvd-16802, aucdifvd)
+aucdifvh <- aucdifvh/24
+aucdifvm <- aucdifvm/(24*60)
+aucdifvs <- aucdifvs/(24*60*60)
+velocity <- aucdifvd+aucdifvh+aucdifvm+aucdifvs
+velocity <- abs(velocity)
+
+bidcount <- rowSums(bids!=0)
+
+aucxcite <- (aucdif/velocity)/bidcount
+
+is.nan.data.frame <- function(x)
+  do.call(cbind, lapply(x, is.nan))
+
+aucxcite[is.nan(aucxcite)] <- 0
+
+df <- cbind(df,aucxcite)
+
+#getting rid of extra vars and changing NA TO 0
+
+df <- df[,-c(37:132,177:182,184:189,191:196,198:203,205:210,212:217,
+             219:224)]
+df <- df[,-c(77)]
+df <- df[,-c(2,5,6,7,8,9,75)]
+df <- df[,-c(4,5)]
+df <- df[,-c(11)]
+
+df$biddy1 <- ifelse(is.na(df$biddy1),0,df$biddy1)
+df$pctfdback <- ifelse(is.na(df$pctfdback),0,df$pctfdback)
+df$photos <- ifelse(is.na(df$photos),0,df$photos)
+df$photos <- ifelse(df$photos<0,0,df$photos)
+df$logphotos <- log(df$photos)
+df$sellerage <- abs(df$sellerage)
+df$logage <- log(df$age)
+df <- df[,-c(56)]
+df$logbid1 <- ifelse(is.na(df$logbid1),"-inf",df$logbid1)
+df$logbid2 <- ifelse(is.na(df$logbid2),"-inf",df$logbid2)
+df$logbid3 <- ifelse(is.na(df$logbid3),"-inf",df$logbid3)
+df$doors <- ifelse(df$doors=="." & df$sportscar==1,2,df$doors)
+df$doors <- ifelse(df$doors=="." & df$midsize==1,4,df$doors)
+df$doors <- ifelse(df$doors=="." & df$truck==1,4,df$doors)
+#### Regions ####
+#newloc <- str_split(df$location, ",",2)
+#newloc <- as.data.frame(newloc)
+#location <- as.data.frame(unique(df$V2))
+
+#df <- cbind(df,t(newloc))
+
+#NewEngland <- list("ME","Maine","VT","Vermont",
+#"NH","New Hampshire","MA","Massachusetts",
+#"RI","Rhode Island","CT","Connecticut")
+#MidAtlantic <- list("NY","NewYork", "PA","Pennsylvania",
+# "MD","Maryland","NJ","NewJersey",
+#  "DE","Delaware","WV","West Virginia",
+#  "VA","Virginia")
+#SouthEast <- list("AR","Arkansas","LA","Louisiana",
+#  "MS","Mississippi","TN","Tennessee",
+# "AL","Alabama","GA","Georgia",
+# "NC","NorthCarolina","SC","SouthCarolina",
+# "FL","Florida")
+#MidWest <- list("OH","Ohio","KY","Kentucky",
+#"IN","Indiana","MI","Michigan",
+#"WI","Wisconsin","IL","Illinois",
+#"MN","Minnesota","ND","North Dakota",
+# "SD","SouthDakota","NE","Nebraska",
+#  "KS","Kansas","IA","Iowa",
+#"MO","Missouri")
+#SouthWest <- list("TX","Texas","OK","Oklahoma",
+# "NM","NewMexico","AZ","Arizona",
+#  "UT","Utah","CO","Colorado","Co","ARIZONA")
+#NorthWest <- list("WA","Washington","OR","Oregon",
+# "ID","Idaho","MT","Montana",
+#  "WY","Wyoming")
+#West <- list("CA","California","NV","Nevada"
+#            )
+#################
+
+remove(aucdif,aucdifvd,aucdifvh,aucdifvm,aucdifvs,aucxcite,bidcount,velocity,truck,sportscar,midsize,intnormcolor,extnormcolor,big3,bidstime,bids)
+
+#######Done Cleaning
+
+df <- df[biddy1>0]
+
+df <- df[,-c("location")]
+df <- df[,-c("membersince")]
+df <- df[logfdback>0]
+df <- df[logbid1>0]
+df <- df[logbid2>0]
+df <- df[logbid3>0]
+df <- df[logphotos>0]
+df <- df[doors>0]
+df <- df[!(trans==".")]
+df <- df[!(title==".")]
+df <- df[!(cyl==".")]
+df <- df[logmiles>0]
+df$sellfdbackpct <- abs(df$sellfdbackpct)
+df <- df[,-c(62:63)]
+df$doors <- as.integer(df$doors)
+df$cyl <- as.integer(df$cyl)
+df$logbid1 <- as.integer(df$logbid1)
+df$logbid2 <- as.integer(df$logbid2)
+df$logbid3 <- as.integer(df$logbid3)
+df <- df[,-c("logage")]
+df <- df[,-c("biddy1")]
+
+#################################
+
+df <- na.omit(df)
+
+set.seed(0)
+
+p <- list(.75,.25)
+
+train = sample(c(TRUE,FALSE), nrow(df), rep=TRUE, prob = p )
+test = (!train)
+
+############model################
+x <- model.matrix(logbid1 ~., data = df)
+
+y <- df$logbid1
+
+grid <- 10^seq(10,-2,length = 100)
+
+
+#########RIDGE#########
+fit.ridge <- glmnet(x, y, alpha=0, lambda = grid)
+plot(fit.ridge, xvar="lambda", label=TRUE)
+
+cv.ridge <- cv.glmnet(x, y, alpha=0)
+plot(cv.ridge)
+
+
+######lasso######
+fit.lasso <- glmnet(x, y, lambda = grid)
+plot(fit.lasso, xvar="lambda", label=TRUE)
+
+cv.lasso <- cv.glmnet(x, y)
+plot(cv.lasso) 
+
+coef(cv.lasso)
+
+plot(fit.lasso, xvar="dev", label=TRUE)
+
+lasso.tr <- glmnet(x[train, ], y[train])
+lasso.tr
+
+pred <- predict(lasso.tr, x[-train, ])
+dim(pred)
+
+mse <- sqrt( apply((y[-train]-pred)^2, 2, mean) )
+plot(log(lasso.tr$lambda), mse, type="b", xlab="Log(lambda)")
+
+lam.best <- lasso.tr$lambda[order(mse)[1]]
+lam.best
+
+coef(lasso.tr, s=lam.best)
