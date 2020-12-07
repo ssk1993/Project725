@@ -1,0 +1,1076 @@
+---
+title: "project725"
+author: "Sugandh K"
+date: "12/1/2020"
+output: pdf_document
+---
+
+```{r message=FALSE, warning=FALSE}
+rm(list = ls(all = TRUE))
+
+#libraries
+
+#loading up libraries
+library(data.table)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(ggthemes)
+library(glmnet)
+library(knitr)
+library(caret)
+library(Metrics)
+library(foreign)
+library(tidyverse)
+library(olsrr)#package for backward selection 
+library(corrplot)
+library(h2o)
+```
+
+```{r}
+#setwd("C:/Users/sugan/Desktop/725/project/auction")
+df <- read.csv("AuctionData.csv", na.strings = ".",stringsAsFactors = F)
+```
+
+```{r}
+dim(df)
+```
+
+```{r}
+str(df[,c(1:10, 604)])
+```
+
+```{r}
+#getting rid of itemnum and vin 
+drop <- c("itemnum","vin")
+df = df[,!(names(df) %in% drop)]
+
+```
+
+
+
+## Exploring some of the most importent variables 
+
+```{r}
+ggplot(data=df[!is.na(df$biddy1),], aes(x=biddy1)) +
+        geom_histogram(fill="blue", binwidth = 1000) 
+        
+```
+
+This does make sense as most of the buyers can't buy high priced cars . 
+
+
+```{r}
+summary(df$biddy1)
+```
+
+```{r}
+unique(df$buyitnow)
+```
+
+There are two types of auctions buyitnow and regular auction . In any auction type if car is sold only then seller will get revenue . Hence keeping data of only sold cars. 
+
+
+```{r}
+df <- df[df$sell == 1,]
+row.names(df) <- NULL
+```
+
+
+when there is buyitnow option and if (and only if) that car was sold then the revenue will be bookvalue. 
+
+lets first check if there are any cars which have been sold by buitnow auction 
+
+```{r}
+buyitcars <- df[(df$buyitnow == 1)& (df$sell == 1),]
+```
+
+```{r}
+dim(buyitcars)
+```
+
+Okay so there is only 1 car which was sold by buyitnow option . so lets replace original dataframes highest bid with bookvalue of this car.
+
+
+```{r}
+buyitcars$bookvalue
+```
+```{r}
+df[31566 , 35]
+
+```
+But before replacing it with bookvalue we can see that it already has a bid value. So some seller put his ford for sell with bookvalue option but buyers bid on it and bought it.Hence there is no need of replacing the bid value 
+
+
+
+```{r}
+summary(df$biddy1)
+```
+
+and now there are no null values for highest bid. 
+
+
+## Data Cleaning 
+
+We have used grouped variables for rust , ding , problem etc. created by author
+so there is no need of individual variables associating with them 
+
+```{r}
+#names(df)
+df <- df[-c(78:413)]
+```
+
+```{r}
+#names(df)
+df <- df[-c(211:259)]
+```
+
+```{r}
+dim(df)
+```
+There are many biddernames in the dataset. I am assuming that the name of the bidder doesn't influence the revenue hence I am deleting them. 
+
+
+```{r}
+
+df <- df[!grepl("^biddername",names(df))]
+```
+
+```{r}
+dim(df)
+```
+
+
+Dropping columns with high null values. 
+
+
+```{r}
+#colSums(is.na(df))
+
+# #dropping columns with more than 15% missing values
+df<- df[ , colSums(is.na(df)) < 6500 ,]
+dim(df)
+```
+### Dropping missing rows 
+```{r}
+
+
+df <- na.omit(df)
+dim(df)
+```
+
+## Date Variables 
+
+There are many variables associated with dates like week , length , endsunday. There is variable for the week in which auction was placed , so other date variables like starting date and ending date become redundent , so lets just drop them 
+
+
+The variable member since is interesting as old website users might have more  understanding of auctions. 
+
+```{r}
+library(lubridate)
+## Dealing with date variables
+df$startdate <- parse_date_time(df$startdate, orders="mdy HMS")
+df$enddate <- parse_date_time(df$enddate, orders="mdy HMS")
+df$membersince <- parse_date_time(df$membersince, orders="mdy")
+
+#extracting year from member since 
+df$memberyr <- year(df$membersince)
+
+df$months <-month(df$startdate)
+df$days <-day(df$startdate)
+df$monthe <-month(df$enddate)
+df$daye <-day(df$enddate)
+df$wdays <-  wday(df$enddate)
+
+drop <- c("startdate","enddate","membersince")
+df = df[,!(names(df) %in% drop)]
+
+
+
+```
+
+
+
+## The most important Numerical Variables 
+
+
+
+
+
+```{r}
+numvar <- which(sapply(df, is.numeric)) 
+numnames <- names(numvar) 
+cat('There are', length(numvar), 'numeric variables')
+```
+We have 74 Numeric Variables lets see their correlation with the highest bid 
+
+```{r}
+#dataset of numeric variables 
+numdf <- df[,numnames]
+
+#pairwise correlation 
+cor_numVar <- cor(numdf, use="pairwise.complete.obs")
+
+#correlation with highest bid
+cor_sorted <- as.matrix(sort(cor_numVar[,'biddy1'], decreasing = TRUE))
+
+
+#highly correlated variables 
+
+CorHigh <- names(which(apply(cor_sorted, 1, function(x) abs(x)>0.1)))
+
+#matrix of high correlated variables 
+cor_numVar <- cor_numVar[CorHigh, CorHigh]
+
+options(repr.plot.width=10, repr.plot.height=10)
+corrplot(cor_numVar, tl.col="black", tl.pos = "lt", number.cex=0.65,  tl.cex=0.7)
+
+```
+
+As you can see there are many variables which have their log values . So just keep one of them instead of both.
+
+
+```{r}
+drop <- c("logmiles","biddy2","logstart","logbid2", "age2", "descriptionsize","auction")
+df = df[,!(names(df) %in% drop)]
+
+dim(df)
+```
+```{r}
+#names(df)
+```
+
+Lets see if there are more redundent variables 
+X_merge variables just shows the merging of datasets so lets just drop it. 
+we have age and logage , so lets drop age. 
+the names of seller and bideer generally dont influence the revenue so lets drop them. 
+Sellerborn and sellerage is in dataset. lets drop sellerborn from the dataset.
+lets keep logtext instead of text. 
+lets keep loghtml instead of html. 
+
+```{r}
+drop <- c("X_merge","age","highbiddername","sellername","sellerborn",
+          "text","html","name","software")
+df = df[,!(names(df) %in% drop)]
+dim(df)
+```
+
+## label Encoding and Factorising variables 
+
+
+```{r}
+unique(df$trans)
+df$trans <- as.factor(df$trans)
+```
+```{r}
+unique(df$doors)
+df$doors <- as.factor(df$doors)
+```
+
+
+```{r}
+#similarly
+df$ding_group <- as.factor(df$ding_group)
+df$scratch_group <- as.factor(df$scratch_group)
+df$crack_group <- as.factor(df$crack_group)
+df$broken_group <- as.factor(df$broken_group)
+df$dent_group <- as.factor(df$dent_group)
+df$problem_group <- as.factor(df$problem_group)
+df$rust_group <- as.factor(df$rust_group)
+
+```
+
+### Creating factor variables
+
+```{r}
+table(df$model)
+```
+
+
+```{r}
+
+df$model <- as.factor(df$model)
+
+```
+
+```{r}
+table(df$interior)
+```
+
+looks like there are missing values in interior as --. lets just drp them and make it as factor. 
+
+```{r}
+df <- df[df$interior != "--" ,]
+```
+
+```{r}
+table(df$interior)
+```
+
+```{r}
+df$interior <- as.factor(df$interior)
+```
+
+```{r}
+table(df$exterior)
+```
+
+```{r}
+df$exterior <- as.factor(df$exterior)
+```
+
+
+```{r}
+table(df$model)
+```
+
+```{r}
+df$maker <- as.factor(df$maker)
+```
+
+```{r}
+table(df$webpage)
+```
+
+```{r}
+df$webpage <- ifelse(df$webpage=="ebayhosting",1,0)
+```
+
+
+```{r}
+
+df$condition <- ifelse(df$webpage=="Used",1,0)
+
+```
+
+```{r}
+
+extnormcolor <- list("Black", "Blue", "Brown", "Green",
+                     "Orange", "Silver", "Tan", "Yellow",
+                     "Burgundy","Gold","Gray","Red", "White")
+
+df$exterior <- ifelse(df$exterior %in% extnormcolor,1,0)
+
+intnormcolor <- list("Black","Blue","Brown","Gray",
+                     "Gray","Red","Tan","White")
+
+df$interior <- ifelse(df$interior %in% intnormcolor,1,0)
+
+#creating big three 
+
+big3 <- list("Chevrolet","Dodge","Ford")
+df$BigThree <- ifelse(df$maker %in% big3, 1,0)
+
+#sports car and others
+sportscar <- list("Camaro","Corvette","Mustang","Thunderbird")
+midsize <- list("Civic","Accord","Corolla","Camry","Maxima","Altima","3-Series")
+truck <- list("F-250","F-150","Tacoma","F-350","Silverado 1500","Silverado 2500","F-100")
+
+df$sportscar <- ifelse(df$model %in% sportscar,1,0)
+df$midsize <- ifelse(df$model %in% midsize,1,0)
+df$truck <- ifelse(df$model %in% truck,1,0)
+
+```
+
+
+
+
+```{r}
+
+#we will use logbid as revenue as biddy1 is skewed 
+
+
+```
+
+Lets check if there are any charachter variables 
+
+```{r}
+Charcol <- names(df[,sapply(df, is.character)])
+Charcol
+```
+```{r}
+unique(df$title)
+```
+```{r}
+df$title <- as.factor(df$title)
+```
+
+```{r}
+table(df$caradphotos)
+```
+
+
+Carad photos has many missing values so lets just drop it 
+
+```{r}
+drop <- c("caradphotos")
+df = df[,!(names(df) %in% drop)]
+```
+
+```{r}
+#table(df$location)
+encode_ordinal <- function(x, order = unique(x)) {
+  x <- as.numeric(factor(x, levels = order, exclude = NULL))
+  x
+}
+df[["location"]] <- encode_ordinal(df[["location"]])
+```
+
+
+
+## Correlations again 
+
+```{r}
+numvar <- which(sapply(df, is.numeric)) 
+numnames <- names(numvar) 
+cat('There are', length(numvar), 'numeric variables')
+
+#dataset of numeric variables 
+numdf <- df[,numnames]
+
+#pairwise correlation 
+cor_numVar <- cor(numdf, use="pairwise.complete.obs")
+
+#correlation with highest bid
+cor_sorted <- as.matrix(sort(cor_numVar[,'biddy1'], decreasing = TRUE))
+
+
+#highly correlated variables 
+
+CorHigh <- names(which(apply(cor_sorted, 1, function(x) abs(x)>0.1)))
+
+#matrix of high correlated variables 
+cor_numVar <- cor_numVar[CorHigh, CorHigh]
+
+options(repr.plot.width=10, repr.plot.height=10)
+corrplot(cor_numVar, tl.col="black", tl.pos = "lt", number.cex=0.65,  tl.cex=0.7)
+```
+
+
+
+## Removing outliers 
+
+```{r}
+# library(outliers)
+# 
+# outlier(df$biddy1)
+
+
+```
+
+```{r}
+#dropping the outlier 
+
+df <- df[df$biddy1 < 860100 ,]
+```
+
+## Hot encoding factor variables 
+
+```{r}
+factvar <- which(sapply(df, is.factor)) 
+factnames <- names(factvar) 
+
+
+factdf <- df[,factnames]
+```
+
+```{r}
+numvar <- which(sapply(df, is.numeric)) 
+numnames <- names(numvar) 
+
+
+numdf <- df[,numnames]
+```
+
+
+```{r}
+#Creating dataset for k-means clustering first 
+#Combing two datasets to make final dataset 
+finaldata2 <- cbind(numdf, factdf)
+
+```
+
+
+```{r}
+library(stargazer)
+
+#stargazer(finaldata2, type = "latex" )
+```
+
+
+
+
+```{r}
+drop <- c("model","maker")
+factdf= factdf[,!(names(factdf) %in% drop)]
+```
+
+
+#one hot encoding 
+```{r}
+install.packages('mltools')
+library(mltools)
+
+
+factdf <- one_hot(as.data.table(factdf))
+
+```
+
+
+
+```{r}
+
+#Combing two datasets to make final dataset 
+finaldata <- cbind(numdf, factdf)
+```
+
+```{r}
+drop <- c("biddy1","model")
+finaldata= finaldata[,!(names(finaldata) %in% drop)]
+```
+
+### Choosing dependent variable 
+
+As biddy1 is right skewed we will use log bid as a dependent variable 
+
+
+
+```{r}
+
+names(finaldata)[names(finaldata) == "logbid1"] <- "revenue"
+#making revenue as first column 
+finaldata<- finaldata %>% select(revenue, everything())
+names(finaldata) <- make.names(names(finaldata))
+```
+relationship between revenue and time
+```{r}
+df1<-finaldata2[, c("biddy1" ,"months" , "monthe", "days" , "daye" )]
+dfmonth2 <- df1[df1$monthe == 2,]
+meanmonth2 <- mean(dfmonth2$biddy1)
+summonth2 <- sum(dfmonth2$biddy1)
+meanmonth2
+summonth2
+dfmonth3 <- df1[df1$monthe == 3,]
+meanmonth3 <- mean(dfmonth3$biddy1)
+summonth3 <- sum(dfmonth3$biddy1)
+meanmonth3
+summonth3
+dfmonth4 <- df1[df1$monthe == 4,]
+meanmonth4 <- mean(dfmonth4$biddy1)
+summonth4 <- sum(dfmonth4$biddy1)
+meanmonth4
+summonth4
+dfmonth5 <- df1[df1$monthe == 5,]
+meanmonth5 <- mean(dfmonth5$biddy1)
+summonth5 <- sum(dfmonth5$biddy1)
+meanmonth5
+summonth5
+dfmonth6 <- df1[df1$monthe == 6,]
+meanmonth6 <- mean(dfmonth6$biddy1)
+summonth6 <- sum(dfmonth6$biddy1)
+meanmonth6
+summonth6
+dfmonth7 <- df1[df1$monthe == 7,]
+meanmonth7 <- mean(dfmonth7$biddy1)
+summonth7 <- sum(dfmonth7$biddy1)
+meanmonth7
+summonth7
+dfmonth8 <- df1[df1$monthe == 8,]
+meanmonth8 <- mean(dfmonth8$biddy1)
+summonth8 <- sum(dfmonth8$biddy1)
+meanmonth8
+summonth8
+dfmonth9 <- df1[df1$monthe == 9,]
+meanmonth9 <- mean(dfmonth9$biddy1)
+summonth9 <- sum(dfmonth9$biddy1)
+meanmonth9
+summonth9
+dfmonth10 <- df1[df1$monthe == 10,]
+meanmonth10 <- mean(dfmonth10$biddy1)
+summonth10 <- sum(dfmonth10$biddy1)
+meanmonth10
+summonth10
+#summary monthly mean
+monthe <- c(2,3,4,5,6,7,8,9,10)
+mean <- c(meanmonth2,meanmonth3,meanmonth4,meanmonth5,meanmonth6,meanmonth7,meanmonth8,meanmonth9,meanmonth10)
+#summary monthly sum
+sum <- c(summonth2,summonth3,summonth4,summonth5,summonth6,summonth7,summonth8,summonth9,summonth10)
+monthly <- data.frame(monthe,mean,sum)
+monthly
+```
+```{r}
+#graphically biddy1's mean by month
+monthly <- tibble(
+  month = c("2","3","4","5","6","7","8","9","10"),
+  mean = c(monthly$mean)
+)
+knitr::kable(monthly)
+p3 <- ggplot(data = monthly, mapping = aes(
+  x = fct_reorder(month, desc(mean)),
+  y = mean ))
+p3 + geom_col(fill = "lightblue") +
+  geom_text(mapping = aes(
+    y = mean / 2, label = paste(mean))) +
+  scale_y_continuous(breaks = NULL) +
+  coord_flip() + 
+  labs(x = "month", 
+       y = "mean")
+```
+```{r}
+#summary by days
+df1$daye<- as.numeric(df1$daye)
+dfmonth_b <- df1[df1$daye <= 10,]
+meanmonth_b <- mean(dfmonth_b$biddy1)
+summonth_b <- sum(dfmonth_b$biddy1)
+meanmonth_b
+summonth_b
+dfmonth_m <- df1[df1$daye >=11 & df1$daye <= 20,]
+meanmonth_m <- mean(dfmonth_m$biddy1)
+summonth_m <- sum(dfmonth_m$biddy1)
+meanmonth_m
+summonth_m
+dfmonth_e <- df1[df1$daye >= 21 & df1$daye <= 31,]
+meanmonth_e <- mean(dfmonth_e$biddy1)
+summonth_e <- sum(dfmonth_e$biddy1)
+meanmonth_e
+summonth_e
+#summary mean
+period <- c("Beginning of month","Middle of month","Ending of month")
+meandays <- c(meanmonth_b,meanmonth_m,meanmonth_e)
+#summary sum
+sumdays <- c(summonth_b,summonth_m,summonth_e)
+daily <- data.frame(period,meandays,sumdays)
+daily
+daily <- data.table(daily)
+```
+```{r}
+df4 <-df[, c("biddy1"  , "wdays")]
+df4$wdays <- as.numeric(df4$wdays)
+dfweekday <- df4[df4$wdays <= 5,]
+meanweekday <- mean(dfweekday$biddy1)
+meanweekday
+dfweekend <- df4[df4$wdays > 5,]
+meanweekend <- mean(dfweekend$biddy1)
+meanweekend
+
+```
+```{r}
+#graphically weekdays vs. weekend
+wdays <- c("weekday","weekend")
+meanwdays <- c(meanweekday,meanweekend)
+weekly <- data.frame(wdays,meanwdays)
+weekly
+weekly <- data.table(weekly)
+```
+```{r}
+dfmon <- df4[df4$wdays == 1,]
+meanmon <- mean(dfmon$biddy1)
+meanmon
+dftue <- df4[df4$wdays == 2,]
+meantue <- mean(dftue$biddy1)
+meantue
+dfwed <- df4[df4$wdays == 3,]
+meanwed <- mean(dfwed$biddy1)
+meanwed
+dfthur <- df4[df4$wdays == 4,]
+meanthur <- mean(dfthur$biddy1)
+meanthur
+dffri <- df4[df4$wdays == 5,]
+meanfri <- mean(dffri$biddy1)
+meanfri
+dfsat <- df4[df4$wdays == 6,]
+meansat <- mean(dfsat$biddy1)
+meansat
+dfsun <- df4[df4$wdays == 7,]
+meansun <- mean(dfsun$biddy1)
+meansun
+
+```
+```{r}
+weeks <- c('Monday','Tuesday','Wednesday','Thurday','Friday','Saturday',"Sunday")
+meanweeks <- c(meanmon,meantue,meanwed,meanthur,meanfri,meansat,meansun)
+week <- data.frame(weeks,meanweeks)
+week
+week <- data.table(weekly)
+```
+
+## Lasso and Ridge 
+
+```{r}
+set.seed(0)
+sample_size = floor(0.5*nrow(finaldata))
+
+
+# randomly split data in r
+picked = sample(seq_len(nrow(finaldata)),size = sample_size)
+train = finaldata[picked,]
+test = finaldata[-picked,]
+```
+
+
+```{r}
+trainx = train[,!(names(train) %in% "revenue")]
+trainy = train[,(names(train) %in% "revenue")]
+
+testx = test[,!(names(test) %in% "revenue")]
+testy = test[,(names(test) %in% "revenue")]
+
+
+set.seed(2020)
+my_control <-trainControl(method="cv", number=10)
+lassoGrid <- expand.grid(alpha = 1, lambda = seq(0.001,0.1,by = 0.0005))
+lasso_mod <- train(x=trainx, y=trainy, method='glmnet', trControl= my_control, tuneGrid=lassoGrid) 
+
+
+
+
+lasso_mse<- mean((testy - predict(lasso_mod, newdata=testx))^2)
+lasso_rmse <- sqrt(lasso_mse)
+
+
+
+my_control <-trainControl(method="cv", number=10)
+ridgeGrid <- expand.grid(alpha = 0, lambda = seq(0.001,0.1,by = 0.0005))
+
+ridge_mod <- train(x=trainx, y=trainy, method='glmnet', trControl= my_control, tuneGrid=ridgeGrid) 
+
+
+
+ridge_mse <- mean((testy - predict(ridge_mod, newdata=testx))^2)
+ridge_rmse <- sqrt(ridge_mse)
+
+print(paste("Lasso RMSE for only sold cars data is", lasso_rmse))
+print(paste("Ridge RMSE for only sold cars data  data is", ridge_rmse))
+
+```
+
+```{r}
+
+lassoVarImp <- varImp(lasso_mod,scale=F)
+lassoImportance <- lassoVarImp$importance
+
+varsSelected <- length(which(lassoImportance$Overall!=0))
+varsNotSelected <- length(which(lassoImportance$Overall==0))
+
+cat('Lasso uses', varsSelected, 'variables in its model, and did not select', varsNotSelected, 'variables.')
+
+```
+
+## Random forest
+
+Runtime 15 - 20 minutes 
+
+```{r}
+set.seed(0)
+h2o.init()
+#train data as h20 train 
+h2o.train=as.h2o(train)
+#test data as h20 test 
+h2o.test=as.h2o(test)
+```
+
+
+```{r}
+
+#runtime 3-8 minutes
+#Random Forest  model for sell data
+rf_mod= h2o.randomForest(x=2:501,y=1,
+                                training_frame=h2o.train,
+                                validation_frame = h2o.test, 
+                                model_id = "rf_covType_v1", nfolds = 10,
+                                ntrees = 1000, stopping_rounds = 2,  
+                                score_each_iteration = T , seed = 121)
+```
+
+```{r}
+rf_rmse=h2o.rmse(rf_mod)
+
+print(paste("Random Forest  RMSE  is", rf_rmse))
+```
+
+
+```{r}
+var2<-h2o.varimp(rf_mod)
+
+var2 
+```
+
+
+
+
+```{r}
+library(knitr)
+library(kableExtra)
+library(magrittr)
+library(magick)
+#webshot::install_phantomjs()
+```
+
+
+```{r}
+covars = c("variable" ,"scaled_importance")
+
+var2 <- var2[,covars]
+var20 <-head(var2 , 10)
+
+var20$scaled_importance = round(var20$scaled_importance,2)
+
+names(var20)[names(var20) == "scaled_importance"] <- "Importance"
+names(var20)[names(var20) == "variable"] <- "Variable"
+kable(var20)
+```
+
+```{r}
+#round the rmse values first 
+rf <- round(rf_rmse,digits=3)
+ri <- round(ridge_rmse,digits=3)
+la <- round(lasso_rmse,digits=3)
+
+library(knitr)
+Model <- c("Ridge", "Lasso", "Random Forest" )
+
+RMSE <- c(ri,la, rf  )
+msetable <- data.frame(cbind(Model,RMSE))
+
+
+kable(msetable)
+```
+
+##  NRMSE for models 
+
+```{r}
+rf_nrmse<-rf_rmse/sd(test$revenue)
+la_nrmse <- lasso_rmse/sd(test$revenue)
+ri_nrmse <- ridge_rmse/sd(test$revenue)
+
+rf2 <- round(rf_nrmse,digits=3)
+ri2 <- round(ri_nrmse,digits=3)
+la2 <- round(la_nrmse,digits=3)
+
+
+```
+
+```{r}
+Model <- c("Ridge", "Lasso", "Random Forest" )
+
+NRMSE <- c(ri2,la2, rf2  )
+msetable2 <- data.frame(cbind(Model,NRMSE))
+
+
+kable(msetable2)
+```
+
+
+
+
+```{r}
+keep <- c("revenue","miles","startbid","n","numbids","year","photos","length","months")
+finalpdp = finaldata[,(names(finaldata) %in% keep)]
+
+finalpdp<- finalpdp %>% select(revenue, everything())
+```
+
+```{r}
+set.seed(0)
+sample_size = floor(0.7*nrow(finalpdp))
+
+
+# randomly split data in r
+picked = sample(seq_len(nrow(finalpdp)),size = sample_size)
+train3 = finalpdp[picked,]
+test3 = finalpdp[-picked,]
+```
+
+```{r}
+#train data as h20 train 
+h2o.train3=as.h2o(train3)
+#test data as h20 test 
+h2o.test3=as.h2o(test3)
+```
+
+```{r}
+#Random Forest model 
+rffpdp= h2o.randomForest(x=2:9,y=1,
+                                training_frame=h2o.train3,
+                                validation_frame = h2o.test3, 
+                                model_id = "rf_covType_v1",
+                                ntrees = 1000, stopping_rounds = 2,  
+                                score_each_iteration = T, seed = 2020)
+```
+
+
+```{r}
+h2o.rmse(rffpdp)
+```
+
+
+
+
+
+
+```{r}
+pdps <- h2o.partialPlot(rffpdp, h2o.test3, cols =  "year", nbins = 150, plot = F)
+pdps2 <- h2o.partialPlot(rffpdp, h2o.test3, cols =  "numbids", nbins = 100, plot = F)
+pdps3 <- h2o.partialPlot(rffpdp, h2o.test3, cols =  "n", nbins = 100 , plot = F)
+names(pdps3)[names(pdps3) == "n"] <- "num_bidders"
+pdps4 <- h2o.partialPlot(rffpdp, h2o.test3, cols =  "miles", nbins = 100 , plot = F)
+pdps5 <- h2o.partialPlot(rffpdp, h2o.test3, cols =  "startbid", nbins = 100, plot = F)
+pdps6 <- h2o.partialPlot(rffpdp, h2o.test3, cols =  "photos", nbins = 100, plot = F)
+pdps7<- h2o.partialPlot(rffpdp, h2o.test3, cols = "length", nbins = 100, plot = F)
+pdps8<- h2o.partialPlot(rffpdp, h2o.test3, cols = "months", nbins = 100, plot = F)
+```
+
+```{r}
+library(ggridges)
+library(cowplot)
+library(svglite)
+options(scipen=10000)
+options(repr.plot.width=18, repr.plot.height=8) #plot size
+p <- ggplot(data = pdps, aes(x = year, y = mean_response)) +
+      geom_line(color = 'red') + geom_point(color = 'red',size=1) + xlab("Year") + ylab("Prediction") +
+      theme_minimal()
+p2 <- ggplot(data = pdps2, aes(x = numbids, y = mean_response)) +
+      geom_line(color = 'red')+ geom_point(color = 'red',size=1) +  xlab("Number of Bids") + ylab("Prediction") +
+      theme_minimal()
+p3 <- ggplot(data = pdps3, aes(x = num_bidders, y = mean_response)) +
+      geom_line(color = 'red')+ geom_point(color = 'red',size=1) +  xlab("Number of Bidders") + ylab("Prediction")+
+      theme_minimal()
+p4 <- ggplot(data = pdps4, aes(x = miles, y = mean_response)) +
+      geom_line(color="red")+ geom_point(color = 'red',size=1) +  xlab("Miles") + ylab("Prediction")+
+      theme_minimal()
+
+plot_grid(p,p2,p3,p4, nrow=2, ncol=2)
+```
+
+```{r}
+
+p5 <- ggplot(data = pdps5, aes(x = startbid, y = mean_response)) +
+      geom_line(color = 'red')+ geom_point(color = 'red',size=1) +  xlab("Starting bid") + ylab("Prediction") +
+      theme_minimal()
+p6 <- ggplot(data = pdps6, aes(x = photos, y = mean_response)) +
+      geom_line(color = 'red')+ geom_point(color = 'red',size=1) +  xlab("Number of Photos") + ylab("Prediction") +
+      theme_minimal()
+p7 <- ggplot(data = pdps7, aes(x = length, y = mean_response)) +
+      geom_line(color = 'red')+ geom_point(color = 'red',size=1) +  xlab("Length of the auction") + ylab("Prediction") +
+      theme_minimal()
+p8 <- ggplot(data = pdps8, aes(x = months, y = mean_response)) +
+      geom_line(color = 'red')+ geom_point(color = 'red',size=1) +  xlab("month of auction") + ylab("Prediction") +
+      theme_minimal()
+
+plot_grid(p5,p6,p7,p8, nrow=2, ncol=2)
+```
+
+
+### Most observed model
+
+```{r}
+table(finaldata2$model)
+```
+
+```{r}
+mdata <- finaldata2[, c("model","biddy1","numbids")]
+```
+
+```{r}
+mdata2<-mdata %>% 
+  group_by(model) %>% 
+  summarise(observations = n(),
+            avg_revenue = mean(biddy1 ),
+            avg_bids = mean(numbids)
+            )
+```
+```{r}
+mdata2 <-mdata2[order(-mdata2$observations),]
+```
+
+```{r}
+
+mdata2$avg_revenue <- round(mdata2$avg_revenue,digits=2)
+mdata2
+#stargazer(mdata2, summary=FALSE, rownames=TRUE)
+```
+
+## K means clustering
+
+finaldata 2 for clustering
+
+
+
+```{r}
+models <- finaldata2[,c("model","biddy1")]
+```
+```{r}
+models<-models %>% 
+  group_by(model) %>% 
+  summarise(observations = n(),
+            avg_revenue = mean(biddy1)
+            )
+```
+
+```{r}
+models <- models[order(-models$observations ),]
+```
+
+
+```{r}
+#stargazer(models , summary = FALSE)
+```
+
+
+```{r}
+library(psych)
+library(factoextra)
+```
+
+
+```{r}
+
+finaldata2$start <- df$startbid
+
+finalcldata <- finaldata2[df$model == "Mustang" ,]
+```
+
+
+```{r}
+numer <- finalcldata[,sapply(finalcldata, is.numeric)]
+numer <- numer[, c("logbid1","year","miles","start","n","warranty",
+                   "numbids","options")]
+
+names(numer)[names(numer) == "logbid1"] <- "revenue"
+
+
+
+invisible(numers <- scale(numer))
+
+fviz_nbclust(numers, kmeans, method = "wss", k.max = 20)
+
+
+
+
+
+```
+
+
+
+```{r}
+cluster1 <- kmeans(numers, centers = 6)
+
+c<-aggregate(numer, by=list(cluster=cluster1$cluster), mean)
+```
+
+```{r}
+head(c)
+```
+
+
+## Demi and Ryan  draw graphs here. Use finaldata2 for graphs.
+
+```{r}
+
+```
+
+
+
+
+
+### End
